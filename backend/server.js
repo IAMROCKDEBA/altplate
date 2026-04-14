@@ -26,6 +26,36 @@ const app = express();
 // Set port
 const PORT = process.env.PORT || 5000;
 
+const normalizeOrigin = (origin = '') => origin.trim().replace(/\/+$/, '');
+const configuredOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map(normalizeOrigin)
+  .filter(Boolean);
+
+const parseTrustProxy = (value) => {
+  if (value === undefined) return null;
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+
+  const asNumber = Number(normalized);
+  return Number.isNaN(asNumber) ? normalized : asNumber;
+};
+
+const allowedOrigins = new Set(configuredOrigins);
+
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.add('http://localhost:5173');
+  allowedOrigins.add('http://127.0.0.1:5173');
+}
+
+const envTrustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+const usesDevTunnel = Array.from(allowedOrigins).some((origin) => origin.includes('.devtunnels.ms'));
+const trustProxy = envTrustProxy ?? (process.env.NODE_ENV === 'production' || usesDevTunnel ? 1 : false);
+app.set('trust proxy', trustProxy);
+
 // Connect to MongoDB
 connectDatabase();
 
@@ -42,9 +72,16 @@ app.use(
   })
 );
 
-// CORS configuration - Allow credentials and specific origin
+// CORS configuration - Allow credentials for configured frontend origins
 const corsOptions = {
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Requests from tools like Postman/cURL may have no Origin header.
+    if (!origin || allowedOrigins.has(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -120,7 +157,8 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode`);
   console.log(`📡 Port: ${PORT}`);
   console.log(`🌐 API URL: http://localhost:${PORT}`);
-  console.log(`🔗 Client URL: ${process.env.CLIENT_URL || 'http://localhost:5173'}`);
+  console.log(`🧭 Trust Proxy: ${String(trustProxy)}`);
+  console.log(`🔗 Allowed Client Origins: ${Array.from(allowedOrigins).join(', ')}`);
   console.log('═══════════════════════════════════════════════════════');
 });
 
