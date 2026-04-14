@@ -1,0 +1,17 @@
+import express from 'express';
+import {
+  submitPlateChoice,
+  getPlateChoices,
+  getPlateChoice,
+  getPlateChoiceStats
+} from '../controllers/plateChoiceController.js';
+import { protect, authorize } from '../middleware/auth.js';
+
+const router = express.Router();
+
+router.post('/', submitPlateChoice);
+router.get('/', protect, authorize('staff'), getPlateChoices);
+router.get('/stats/summary', protect, authorize('staff'), getPlateChoiceStats);
+router.get('/:id', protect, authorize('staff'), getPlateChoice);
+
+export default router;
